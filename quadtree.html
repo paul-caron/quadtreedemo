@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+<canvas></canvas>
+<script>
+
+//point
+class XY{
+	x; //float
+	y; //float
+	constructor(x,y){ //(float x, float y)
+		this.x = x;
+		this.y = y;
+	}
+};
+
+//boundary rectangle with half dimension and center point
+class AABB{
+    center; //XY
+	halfDimension; //float
+	constructor(center, halfDimension){ //(XY center, float halfDimension)
+		this.center = center;
+		this.halfDimension = halfDimension;
+	}
+	containsPoint(point){ //(XY point)->bool
+	    const result = (
+            (point.x <= this.center.x + this.halfDimension) &&
+		     (point.x >= this.center.x - this.halfDimension) &&
+		     (point.y <= this.center.y + this.halfDimension) &&
+		     (point.y >= this.center.y - this.halfDimension));
+	    return result;
+	}
+	intersectsAABB(other){ //(AABB other)->bool
+        const dist = this.halfDimension + other.halfDimension;
+        if(
+            Math.abs(this.center.x - other.center.x) > dist ||
+            Math.abs(this.center.y - other.center.y) > dist
+        ) {
+            return false;
+        }
+        return true;
+	}
+};
+
+class QuadTree{
+	boundary; //AABB boundary
+	QT_NODE_CAPACITY = 1; //const int
+	points = []; //array of XY
+	northWest = null;
+	northEast = null;
+	southWest = null;
+	southEast = null;
+	constructor(boundary){ //(AABB boundary)
+		this.boundary = boundary;
+	}
+	insert(point){//(XY point)->bool
+		if(!(this.boundary.containsPoint(point))){
+			return false;
+		}
+		
+		if(this.points.length < this.QT_NODE_CAPACITY &&
+		    this.northWest == null){
+		    this.points.push(point);
+		    return true;
+		}
+		
+		if(this.northWest == null){
+			this.subdivide();
+			
+			//empty points array, offload to new branches
+			while(this.points.length){
+				let p = this.points.pop();
+				if(this.northWest.insert(p)) continue;
+		        if(this.northEast.insert(p)) continue;
+		        if(this.southWest.insert(p)) continue;
+		        if(this.southEast.insert(p)) continue;
+			}
+			
+		}
+		
+		
+		if(this.northWest.insert(point)) return true;
+		if(this.northEast.insert(point)) return true;
+		if(this.southWest.insert(point)) return true;
+		if(this.southEast.insert(point)) return true;
+		
+		return false;
+	}
+	subdivide(){ //(void)->void
+		this.northWest = 
+        new QuadTree(
+            new AABB(
+                new XY(this.boundary.center.x - this.boundary.halfDimension/2,
+                              this.boundary.center.y - this.boundary.halfDimension/2), 
+                this.boundary.halfDimension/2
+            )
+        );
+        this.northEast = 
+        new QuadTree(
+            new AABB(
+                new XY(this.boundary.center.x + this.boundary.halfDimension/2,
+                              this.boundary.center.y - this.boundary.halfDimension/2), 
+                this.boundary.halfDimension/2
+            )
+        );
+        this.southWest = 
+        new QuadTree(
+            new AABB(
+                new XY(this.boundary.center.x - this.boundary.halfDimension/2,
+                              this.boundary.center.y + this.boundary.halfDimension/2), 
+                this.boundary.halfDimension/2
+            )
+        );
+        this.southEast = 
+        new QuadTree(
+            new AABB(
+                new XY(this.boundary.center.x + this.boundary.halfDimension/2,
+                              this.boundary.center.y + this.boundary.halfDimension/2), 
+                this.boundary.halfDimension/2
+            )
+        );
+	}
+	queryRange(range){ //(AABB range)->[]
+		if(!this.boundary.intersectsAABB(range)) return [];
+		if(this.northWest == null) return this.points;
+		const result = [...this.points];
+		
+		result.push(...this.northWest.queryRange(range));
+		result.push(...this.northEast.queryRange(range));
+		result.push(...this.southWest.queryRange(range));
+		result.push(...this.southEast.queryRange(range));
+		
+		return result;
+		
+	}
+};
+
+let canvas, ctx;
+
+const drawBoundaries = (qt) => {
+	ctx.strokeStyle = "white";
+	
+	if( !qt.northWest && qt.points.length){
+		ctx.strokeRect(
+qt.boundary.center.x - qt.boundary.halfDimension,
+qt.boundary.center.y - qt.boundary.halfDimension,
+qt.boundary.halfDimension*2,
+qt.boundary.halfDimension*2
+	)
+	    return;
+	}
+	if(!qt.northWest) return;
+	drawBoundaries(qt.northWest);
+	drawBoundaries(qt.northEast);
+	drawBoundaries(qt.southWest);
+	drawBoundaries(qt.southEast);
+};
+
+onload = () => {
+	canvas = document.querySelector("canvas");
+	canvas.width = 400;
+	canvas.height = 400;
+	ctx = canvas.getContext("2d");
+	ctx.fillRect(0,0,400,400);
+	
+	const qt = new QuadTree(
+            new AABB(
+                new XY(200,200), 
+                200
+            )
+        );
+    qt.insert(new XY(100,100));
+    qt.insert(new XY(300,100));
+    qt.insert(new XY(300, 300));
+    qt.insert(new XY(100,300));
+    
+    for(let i=100;i--;){
+    	qt.insert(new XY(Math.random()*400,Math.random()*400));
+    }
+    
+    const content = qt.queryRange(new AABB(new XY(200,200),200));
+    
+    for(let point of content){
+    	const p = document.createElement("p");
+        p.innerText = `${point.x}, ${point.y}`;
+    	document.body.append(p);
+        ctx.fillStyle = "white";
+        ctx.fillRect(point.x, point.y,1,1);
+    }
+    
+    drawBoundaries(qt);
+};
+
+</script>
+</body>
+</html>
